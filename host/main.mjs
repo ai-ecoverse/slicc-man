@@ -32,6 +32,7 @@ export async function main({
   columns,
   fetch = globalThis.fetch,
   now,
+  timeout,
 }) {
   const child = { ...env };
   delete child.SCMAN_INSTALL_DIR;
@@ -41,6 +42,7 @@ export async function main({
     columns,
     fetch,
     now,
+    timeout,
     version: version(),
     out: (text) => say(fds[1], text),
     err: (text) => say(fds[2], text),
