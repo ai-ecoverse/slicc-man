@@ -134,6 +134,7 @@ describe('the repository', () => {
       const lines = read(path).split('\n');
       const pattern = /\.(m?js|cjs|ts|json|css)$/.test(path) ? slash : hash;
       lines.forEach((line, index) => {
+        if (index === 0 && line.startsWith('#!')) return;
         assert.doesNotMatch(line, pattern, `${path}:${index + 1}`);
         if (/\.(m?js|cjs|ts|css|html)$/.test(path)) {
           assert.doesNotMatch(line, /(^|\s)(\/\/\s|\/\*)|<!-{2}/, `${path}:${index + 1}`);
