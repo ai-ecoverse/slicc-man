@@ -49,13 +49,14 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
   const url = `${(env.SLICC_INSTALL_BASE_URL || LATEST).replace(/\/+$/, '')}/${file}`;
   let text;
   try {
-    const response = await fetch(url, { redirect: 'follow' });
+    const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60000) });
     if (!response.ok) {
       await response.body?.cancel();
       return fail(`could not download ${url}: HTTP ${response.status}`);
     }
     text = await response.text();
   } catch (error) {
+    if (error?.name === 'TimeoutError') return fail('download timed out');
     return fail(`could not download ${url}: ${reason(error)}`);
   }
   const scratch = mkdtempSync(join(tmpdir(), 'scman-upgrade-'));

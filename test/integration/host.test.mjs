@@ -167,6 +167,7 @@ async function scman(argv, options = {}) {
       tty: options.tty ?? false,
       columns: options.columns,
       now: options.now,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
     });
   } finally {
     for (const fd of fds) closeSync(fd);
@@ -828,6 +829,21 @@ describe('--upgrade', () => {
       down.stderr,
       new RegExp(`^scman: could not download ${url}/release/install\\.sh: .+\\n$`)
     );
+  });
+
+  it('gives the download 60 seconds, then says it timed out', async () => {
+    let signal;
+    const fetch = async (address, init) => {
+      signal = init.signal;
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    };
+    const env = { SCMAN_INSTALL_DIR: scratch, SLICC_INSTALL_BASE_URL: `${url}/release` };
+    const result = await scman(['--upgrade'], { env, fetch });
+    assert.deepEqual(
+      [result.code, result.stdout, result.stderr],
+      [1, '', 'scman: download timed out\n']
+    );
+    assert.ok(signal instanceof AbortSignal);
   });
 
   it('takes no other arguments', async () => {
