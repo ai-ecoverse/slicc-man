@@ -30,7 +30,7 @@ The same installers are attached to every GitHub release, as `install.sh` and `i
 curl -fsSL https://github.com/ai-ecoverse/slicc-man/releases/latest/download/install.sh | sh
 ```
 
-They install the release's `scman` with a launcher in `~/.local/bin` (on Windows `%LOCALAPPDATA%\slicc-man\bin`, added to the user's `PATH`), and download Node 24 into the install when no Node 24 or later is on `PATH`. Options pass through (`curl -fsSL https://get.sliccy.ai/man | sh -s -- --help`): `--version <version>` installs that release instead of the latest, `--dir <dir>` puts the launcher in `<dir>`, and `--help` prints the usage. `install.ps1` takes the same options.
+They install the release's `scman` with a launcher in `~/.local/bin` (on Windows `%LOCALAPPDATA%\slicc-man\bin`, added to the user's `PATH`), and download Node 24 into the install when no Node 24 or later is on `PATH` (the `.tar.gz`, or the `.zip` on Windows), checked against nodejs.org's `SHASUMS256.txt`. Each release also carries the package tarball, `slicc-man-<version>.tgz`, and `SHA256SUMS`, which covers the tarball, `install.sh` and `install.ps1`: the installers check the tarball against it, unpack it into `${XDG_DATA_HOME:-~/.local/share}/slicc-man/<version>` (on Windows `%LOCALAPPDATA%\slicc-man\<version>`), write the launcher (`scman`, or `scman.ps1` and `scman.cmd` on Windows, which only start `node.exe` with the entry script and the arguments, the node call and its `exit` on one line of the `.cmd`), run it with `--version` (the version alone, or `scman <version>` from older releases), and print `scman <version> installed to <launcher>`. Options pass through (`curl -fsSL https://get.sliccy.ai/man | sh -s -- --help`): `--version <version>` installs that release instead of the latest, `--dir <dir>` puts the launcher in `<dir>`, and `--help` prints the usage; `install.sh` exits 2 for an unknown option or one without its value. `install.ps1` takes the same options, spelled `-Version`, `-Dir` and `-Help`. `SLICC_INSTALL_BASE_URL` replaces the directory the assets are downloaded from (by default `https://github.com/ai-ecoverse/slicc-man/releases/latest/download`, or `…/releases/download/v<version>` with `--version`), and `SLICC_NODE_DIST_BASE` nodejs.org, for mirrors and tests.
 
 On a machine with Node 24 or later, npm works too:
 
@@ -57,15 +57,15 @@ man [options] [section] topic...
 | `-a`, `--all` | show every matching page; there is only ever one, so it changes nothing |
 | `-w`, `--where`, `--path`, `--location` | print the page's URL, `https://www.sliccy.com/man/<topic>.md`, instead of showing it |
 | `-P <pager>`, `--pager=<pager>` | the pager (see [Rendering](#rendering)) |
-| `-l <file>`, `--local-file=<file>` | render a local Markdown file (`-` for stdin) as a page; the operands are files, not topics |
+| `-l`, `--local-file` | render the operands, local Markdown files (`-` for stdin), as pages; the page's name is the file's, without `.md`, and `stdin` for `-` |
 | `-i`, `--ignore-case` | the default |
 | `-I`, `--match-case` | look the topic up as typed, not in lower case |
 | `--nh`, `--no-hyphenation`, `--nj`, `--no-justification` | accepted; the renderer neither hyphenates nor justifies |
 | `-h`, `--help` | the usage to stdout, exit 0 |
-| `-V`, `--version` | `man <version>` (or `scman <version>`) to stdout, exit 0; every host command takes it, and the installer runs the launcher with it |
+| `-V`, `--version` | the version alone (`1.2.0`) to stdout, exit 0; every host command takes it, and the installer runs the launcher with it |
 | `--upgrade` | see [`--upgrade`](#--upgrade) |
 
-An option's value may be attached (`-s1`, `-Pcat`) or the next argument, and `--` ends the options. `man` with no topic prints `What manual page do you want?` and `For example, try 'man man'.` to stderr and exits 2.
+Short options may be grouped (`-aw`). An option's value may be attached (`-s1`, `-Pcat`, `--pager=cat`) or the next argument; options may come after the operands, and `--` ends the options. Of `-k` and `-f`, the last one given counts, and so for `-i` and `-I`. With `-k` or `-f`, the operands are matched with `apropos`'s and `whatis`'s defaults, and only `-s` of the other options counts. `man` with no topic prints `What manual page do you want?` and `For example, try 'man man'.` to stderr and exits 2.
 
 ## apropos and whatis
 
@@ -87,7 +87,7 @@ whatis [options] topic...
 | `-s <list>`, `--sections=<list>` | only those sections; without 1, nothing matches | the same |
 | `-h`, `-V`, `--upgrade` | as for `man` | the same |
 
-On a terminal, a line wider than the width (see [Rendering](#rendering)) is cut and ends in `...`; through a pipe it is whole. A keyword with no match prints `<keyword>: nothing appropriate.` to stderr. With `-a`, that is printed for the keywords together, when no page matches them all. A regular expression that doesn't parse is a usage error.
+On a terminal, a line wider than the width (see [Rendering](#rendering)) is cut and ends in `...`; through a pipe it is whole. A keyword with no match prints `<keyword>: nothing appropriate.` to stderr. With `-a`, that is printed for the keywords together, when no page matches them all. A regular expression that doesn't parse is a usage error, `<cmd>: <keyword>: invalid regular expression`. With no keyword, `apropos` prints `apropos what?` (`whatis`: `whatis what?`) to stderr and exits 2; `man -k` and `man -f` do the same.
 
 ## Not supported
 
@@ -96,7 +96,7 @@ These man-db options can't work here. They print `<cmd>: <option>: not supported
 - **man:** `-t`/`--troff`, `-T`/`--troff-device`, `-H`/`--html`, `-X`/`--gxditview`, `-Z`/`--ditroff`, `-M`/`--manpath`, `-m`/`--systems`, `-L`/`--locale`, `-C`/`--config-file`, `-d`/`--debug`, `-D`/`--default`, `-W`/`--where-cat`, `-c`/`--catman`, `-u`/`--update`, `-e`/`--extension`, `-p`/`--preprocessor`, `-R`/`--recode`, `-E`/`--encoding`, `-K`/`--global-apropos`, `-r`/`--prompt`, `--regex`, `--wildcard`, `--names-only`, `--no-subpages`.
 - **apropos, whatis:** `-M`/`--manpath`, `-m`/`--systems`, `-L`/`--locale`, `-C`/`--config-file`, `-d`/`--debug`, `-v`/`--verbose`.
 
-Any other option, or an option without its value, prints `<cmd>: unknown option: <option>` (or `<cmd>: <option>: needs a value`) and the usage to stderr, and exits 2.
+Any other option, or an option without its value, prints `<cmd>: unknown option: <option>` (or `<cmd>: <option>: needs a value`) and the usage to stderr, and exits 2. So does `--upgrade` with anything else, as `<cmd>: --upgrade takes no other arguments`.
 
 ## Exit codes
 
@@ -132,7 +132,7 @@ Pages, the sitemap and the topic index are cached:
 - on a host in `$XDG_CACHE_HOME/slicc-man`, by default `~/.cache/slicc-man`, and on Windows in `%LOCALAPPDATA%\slicc-man\cache`;
 - in SLICC in `~/.cache/slicc-man`, which lives in OPFS, so it survives reloads.
 
-Each site has its own directory in the cache, named by the base URL's host and port. A cached copy is fresh for the response's `Cache-Control` `max-age` (the site sends 4 hours), and 4 hours without one. A stale copy is revalidated with `If-Modified-Since` (the response's `Last-Modified`): `304` keeps it and makes it fresh again, `200` replaces it, and `404` drops it, so the topic has no page. When the site can't be reached, or answers 5xx, a cached copy is shown however old, after one line on stderr, `<cmd>: <url>: <reason>; showing the copy cached <date>`. With nothing cached, the command prints `<cmd>: <url>: <reason>` and exits 2. The cache is written atomically (a temporary file renamed into place), so two commands at once never see half a page; a cache that can't be written is skipped without a word.
+Each site has its own directory in the cache, named by the base URL's host and port (`www.sliccy.com`, `127.0.0.1-8080`), with one JSON file per page, `sitemap.json` and `index.json`. A cached copy is fresh for the response's `Cache-Control` `max-age` (the site sends 4 hours), and 4 hours without one. A stale copy is revalidated with `If-Modified-Since` (the response's `Last-Modified`): `304` keeps it and makes it fresh again, `200` replaces it, and `404` drops it, so the topic has no page. When the site can't be reached, or answers 5xx, a cached copy is shown however old, after one line on stderr, `<cmd>: <url>: <reason>; showing the copy cached <date>`. With nothing cached, the command prints `<cmd>: <url>: <reason>` and exits 2. The cache is written atomically (a temporary file renamed into place), so two commands at once never see half a page; a cache that can't be written is skipped without a word.
 
 `apropos` and `whatis` read the index: every `/man/<topic>` entry of the sitemap, with its description, the first paragraph of its page, rendered as plain text on one line. The index is built from the cached sitemap and pages, fetching what is missing or stale (pages through the same cache, several at a time), and cached itself under the same rules. A page that fails to load is listed without a description.
 
@@ -147,6 +147,8 @@ In SLICC only: when a topic has no page and is a command on `PATH`, `man` prints
 Every host command takes `--upgrade`. It runs the latest release's installer (`install.sh`, or `install.ps1` on Windows) with `--dir` set to the directory the command is installed in, so the new version replaces the old one in place, then prints `<cmd>: <old> → <new>` (for example `scman: 1.2.0 → 1.3.0`), or `<cmd>: already up to date (<version>)`, to stdout and exits 0. If the installer fails, its stderr is passed through and the command exits 1. A command installed with npm prints `npm install -g @ai-ecoverse/slicc-man@latest` to run instead, and exits 0. In SLICC, `--upgrade` prints `pnpm add -g @ai-ecoverse/slicc-man@latest` to run, and exits 0; it installs nothing itself. `--upgrade` takes no other arguments.
 
 The commands are `scman` on a host and `man`, `apropos`, `whatis` and `scman` in SLICC.
+
+The launcher the installer writes sets `SCMAN_INSTALL_DIR` to its own directory; that is how `scman` knows the installer put it there (it removes the variable before it starts a pager or the installer), and without it `scman` counts as installed with npm. The installer is downloaded from `https://github.com/ai-ecoverse/slicc-man/releases/latest/download/` and run as `sh install.sh --dir DIR`, or `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File install.ps1 -Dir DIR` (else `pwsh.exe`); the line it prints, `scman <version> installed to <launcher>`, names the new version. A download that fails is the installer failing: `<cmd>: could not download <url>: <reason>`, exit 1. The download has 60 seconds; after that `--upgrade` prints `<cmd>: download timed out` to stderr and exits 1. `SLICC_INSTALL_BASE_URL`, when set, replaces that release URL for `--upgrade` and for the installers' own downloads.
 
 ## Platforms
 
@@ -168,11 +170,13 @@ npm test
 npm run test:unit
 ```
 
-- `npm run lint`: Biome, the no-comment check and the other [slicc-shared-web](https://github.com/ai-ecoverse/slicc-shared-web) checks.
-- `npm test`: the integration tests in `test/integration/`. Host tests run the commands against a local HTTP server on an ephemeral port standing in for www.sliccy.com (`SLICC_MAN_URL`), with a temporary cache and fake tools, `less` among them, on a temporary `PATH`; only CI touches the real site. `test/integration/repo.test.mjs` checks the workflow, the release config, the package's shape, what `npm pack` ships and the repo rules.
+- `npm run lint`: Biome, the no-comment check and the other [slicc-shared-web](https://github.com/ai-ecoverse/slicc-shared-web) checks, then `shellcheck -s sh` and `dash -n` on `install.sh`.
+- `npm test`: the integration tests in `test/integration/`. `host.test.mjs` runs `scman` (in-process, so a terminal can be faked, and as `host/scman.mjs`) against a local HTTP server on an ephemeral port standing in for www.sliccy.com (`SLICC_MAN_URL`), serving copies of the site's `tree.md` and `man.md` (`pages.json`, with their expected renderings), with a temporary cache and fake tools, `less` among them, on a temporary `PATH`; only CI touches the real site. `install.test.mjs` runs `install.sh` on a tarball packed from the tree, with the Node on `PATH` and with a Node download from a fake nodejs.org, and `--upgrade` against a release served from a local server; `install.ps1` is checked statically, and run when `pwsh` is on `PATH`. `repo.test.mjs` checks the workflow, the release config, the package's shape, what `npm pack` ships and the repo rules.
 - `npm run test:unit`: the unit tests in the gitignored `test/unit/`, with Node's coverage in `coverage/unit/lcov.info`. The pre-commit hook wants 100% coverage of the changed lines.
 
-CI is `.github/workflows/ci.yml`, the only workflow, which runs [slicc-shared-web's pipeline](https://github.com/ai-ecoverse/slicc-shared-web#pipeline) at the devDependency's version, on Linux only: `npm run lint`, then `npm test`, then on a pull request the Claude and Codex reviews. The merge queue requires `ci / integration` and `ci / review`. On a push to `main`, semantic-release releases and publishes to npm through trusted publishing, with provenance from `ci.yml`.
+CI is `.github/workflows/ci.yml`, the only workflow, which runs [slicc-shared-web's pipeline](https://github.com/ai-ecoverse/slicc-shared-web#pipeline) at the devDependency's version, on Linux only: `npm run lint`, then `npm test`, then on a pull request the Claude and Codex reviews. The merge queue requires `ci / integration` and `ci / review`. On a push to `main`, semantic-release releases and publishes to npm through trusted publishing, with provenance from `ci.yml`, and attaches `slicc-man-<version>.tgz`, `SHA256SUMS`, `install.sh` and `install.ps1` to the GitHub release (`scripts/assets.mjs` renames the tarball and writes `SHA256SUMS`).
+
+The code is in `lib/` (options, the Markdown renderer, the cache and index, apropos and whatis, shared with SLICC) and `host/` (`scman.mjs`, the cache directory, the pager, `--upgrade`).
 
 ## License
 

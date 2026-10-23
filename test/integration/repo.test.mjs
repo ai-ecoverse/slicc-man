@@ -51,7 +51,20 @@ describe('the repository', () => {
     const release = JSON.parse(read('.releaserc.json'));
     assert.deepEqual(release.branches, ['main']);
     assert.equal(release.tagFormat, 'v${version}');
-    assert.ok(release.plugins.includes('@semantic-release/npm'));
+    const plugin = (name) => release.plugins.find((entry) => [entry].flat()[0] === name);
+    assert.deepEqual(plugin('@semantic-release/npm'), [
+      '@semantic-release/npm',
+      { tarballDir: 'release' },
+    ]);
+    assert.equal(
+      plugin('@semantic-release/exec')[1].prepareCmd,
+      'node scripts/assets.mjs release ${nextRelease.version}'
+    );
+    assert.deepEqual(
+      plugin('@semantic-release/github')[1].assets.map((asset) => asset.path),
+      ['release/slicc-man-*.tgz', 'release/SHA256SUMS', 'install.sh', 'install.ps1']
+    );
+    assert.ok(read('.gitignore').split('\n').includes('release/'));
     assert.doesNotMatch(JSON.stringify(release), /npmPublish/);
   });
 
@@ -70,7 +83,8 @@ describe('the repository', () => {
   });
 
   it('installs only scman on a host, and man, apropos, whatis and scman in SLICC', () => {
-    if (pkg.bin !== undefined) assert.deepEqual(Object.keys(pkg.bin), ['scman']);
+    assert.deepEqual(pkg.bin, { scman: 'host/scman.mjs' });
+    assert.match(read('host/scman.mjs'), /^#!\/usr\/bin\/env node\n/);
     if (pkg.slicc?.commands !== undefined) {
       assert.deepEqual(Object.keys(pkg.slicc.commands).sort(), [
         'apropos',
