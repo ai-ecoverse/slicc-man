@@ -181,17 +181,14 @@ try {
       'for /f "tokens=2 delims=:." %%c in (''chcp'') do set "SCMAN_CP=%%c"',
       'chcp 65001 >nul',
       "set `"SCMAN_INSTALL_DIR=$(& $escape $Dir)`"",
-      "`"$(& $escape $Node)`" `"$(& $escape $Entry)`" %*",
-      'set "SCMAN_STATUS=%ERRORLEVEL%"',
-      'chcp %SCMAN_CP% >nul',
-      'exit /b %SCMAN_STATUS%',
+      "`"$(& $escape $Node)`" `"$(& $escape $Entry)`" %* & call set `"SCMAN_STATUS=%%ERRORLEVEL%%`" & chcp %SCMAN_CP% >nul & call exit /b %%SCMAN_STATUS%%",
       ''
     ) -join "`r`n"
     [System.IO.File]::WriteAllText($Cmd, $cmdLines, (New-Object System.Text.UTF8Encoding $false))
 
     $Reported = & $Node $Entry --version
-    if ($LASTEXITCODE -ne 0 -or "$Reported" -ne "$BinName $BundleVersion") {
-      Stop-Install "$Entry reports $Reported, not $BinName $BundleVersion"
+    if ($LASTEXITCODE -ne 0 -or ("$Reported" -ne "$BundleVersion" -and "$Reported" -ne "$BinName $BundleVersion")) {
+      Stop-Install "$Entry reports $Reported, not $BundleVersion"
     }
     Write-Output "$BinName $BundleVersion installed to $Launcher"
 

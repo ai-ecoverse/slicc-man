@@ -143,7 +143,7 @@ ensure_node() {
   _version="$(pick_node "$_index" 1)"
   [ -n "$_version" ] || _version="$(pick_node "$_index" 0)"
   [ -n "$_version" ] || die "no Node $MIN_NODE or later in $NODE_DIST_BASE/index.json"
-  _archive="node-$_version-$_os-$_arch.tar.xz"
+  _archive="node-$_version-$_os-$_arch.tar.gz"
   fetch "$NODE_DIST_BASE/$_version/SHASUMS256.txt" "$_tmp/SHASUMS256.txt"
   fetch "$NODE_DIST_BASE/$_version/$_archive" "$_tmp/$_archive"
   verify "$_tmp/$_archive" "$(sum_of "$_tmp/SHASUMS256.txt" "$_archive")"
@@ -151,11 +151,7 @@ ensure_node() {
   _extract="$DATA_DIR/.node-$$"
   rm -rf "$_extract"
   mkdir -p "$_extract"
-  if command -v xz >/dev/null 2>&1; then
-    xz -dc "$_tmp/$_archive" | tar xf - -C "$_extract" --strip-components=1
-  else
-    tar xJf "$_tmp/$_archive" -C "$_extract" --strip-components=1
-  fi
+  tar xzf "$_tmp/$_archive" -C "$_extract" --strip-components=1 || die "could not unpack $_archive"
   rm -rf "$_tmp" "$DATA_DIR/node"
   mv "$_extract" "$DATA_DIR/node"
   printf 'install.sh: Node %s installed to %s\n' "$_version" "$DATA_DIR/node" >&2
@@ -218,7 +214,7 @@ chmod 755 "$LAUNCHER_TMP"
 mv "$LAUNCHER_TMP" "$LAUNCHER"
 
 REPORTED="$("$LAUNCHER" --version 2>/dev/null)" || die "$LAUNCHER --version failed"
-[ "$REPORTED" = "$BIN_NAME $BUNDLE_VERSION" ] || die "$LAUNCHER reports $REPORTED, not $BIN_NAME $BUNDLE_VERSION"
+[ "$REPORTED" = "$BUNDLE_VERSION" ] || [ "$REPORTED" = "$BIN_NAME $BUNDLE_VERSION" ] || die "$LAUNCHER reports $REPORTED, not $BUNDLE_VERSION"
 printf '%s %s installed to %s\n' "$BIN_NAME" "$BUNDLE_VERSION" "$LAUNCHER"
 
 case ":$PATH:" in

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   cpSync,
@@ -31,7 +32,7 @@ function which(name) {
   return found.status === 0 ? found.stdout.trim() : undefined;
 }
 
-function release(at, as = version) {
+function release(at, as = version, old = false) {
   const dir = mkdtempSync(join(scratch, `release-${as}-`));
   const source = mkdtempSync(join(scratch, 'source-'));
   for (const name of ['LICENSE', 'README.md', 'package.json', 'host', 'lib']) {
@@ -40,6 +41,13 @@ function release(at, as = version) {
   const pkg = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
   pkg.version = as;
   delete pkg.scripts;
+  if (old) {
+    const man = join(source, 'lib/man.mjs');
+    writeFileSync(
+      man,
+      readFileSync(man, 'utf8').replace('`${io.version}\\n`', '`${name} ${io.version}\\n`')
+    );
+  }
   writeFileSync(join(source, 'package.json'), `${JSON.stringify(pkg, null, 2)}\n`);
   const pack = spawnSync('npm', ['pack', '--ignore-scripts', '--pack-destination', dir], {
     cwd: source,
@@ -91,8 +99,13 @@ describe('scripts/assets.mjs', () => {
     const sums = readFileSync(join(dir, 'SHA256SUMS'), 'utf8');
     assert.match(
       sums,
-      new RegExp(`^[0-9a-f]{64}  slicc-man-${version.replaceAll('.', '\\.')}\\.tgz\\n$`)
+      new RegExp(
+        `^[0-9a-f]{64}  slicc-man-${version.replaceAll('.', '\\.')}\\.tgz\\n[0-9a-f]{64}  install\\.sh\\n[0-9a-f]{64}  install\\.ps1\\n$`
+      )
     );
+    const hash = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
+    assert.ok(sums.includes(`${hash(installSh)}  install.sh\n`));
+    assert.ok(sums.includes(`${hash(installPs1)}  install.ps1\n`));
     assert.ok(existsSync(join(dir, `slicc-man-${version}.tgz`)));
     assert.ok(!existsSync(join(dir, `ai-ecoverse-slicc-man-${version}.tgz`)));
     const bad = spawnSync(process.execPath, [join(root, 'scripts/assets.mjs'), dir, 'nope']);
@@ -132,9 +145,24 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
     const text = readFileSync(launcher, 'utf8');
     assert.ok(text.includes(`'${entry}' "$@"`), text);
     const reported = await run(launcher, ['--version'], { env: env({}) });
-    assert.equal(reported.stdout, `scman ${version}\n`);
+    assert.equal(reported.stdout, `${version}\n`);
     const printed = await run(launcher, [], { env: env({}) });
     assert.equal(printed.status, 2);
+  });
+
+  it('accepts a release whose --version still prints scman <version>', async () => {
+    const h = home();
+    const result = await run('sh', [installSh, '--dir', join(h, 'bin')], {
+      env: env({
+        HOME: h,
+        SLICC_INSTALL_BASE_URL: pathToFileURL(release(undefined, version, true)).href,
+      }),
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      (await run(join(h, 'bin', 'scman'), ['--version'], { env: env({}) })).stdout,
+      `scman ${version}\n`
+    );
   });
 
   it('takes --version, and XDG_DATA_HOME for the data', async () => {
@@ -165,7 +193,7 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
     });
     assert.equal(result.status, 0, result.stderr);
     const launched = await run(join(bin, 'scman'), ['--version'], { env: env({}), cwd: h });
-    assert.equal(launched.stdout, `scman ${version}\n`);
+    assert.equal(launched.stdout, `${version}\n`);
     const marker = readFileSync(join(bin, 'scman'), 'utf8').split('\n')[1];
     const parsed = spawnSync('sh', ['-c', `${marker}; printf %s "$SCMAN_INSTALL_DIR"`], {
       encoding: 'utf8',
@@ -199,10 +227,7 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
     }
   });
 
-  const xz = which('xz');
-  it('downloads Node 24 when PATH has none or an older one', {
-    skip: !xz && 'xz is not installed',
-  }, async () => {
+  it('downloads Node 24 as .tar.gz when PATH has none or an older one', async () => {
     const os = { darwin: 'darwin', linux: 'linux' }[process.platform];
     const arch = { x64: 'x64', arm64: 'arm64' }[process.arch];
     if (!os || !arch) return;
@@ -215,10 +240,10 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
     );
     chmodSync(join(dist, 'build', name, 'bin', 'node'), 0o755);
     mkdirSync(join(dist, 'v24.99.0'));
-    const archive = join(dist, 'v24.99.0', `${name}.tar.xz`);
+    const archive = join(dist, 'v24.99.0', `${name}.tar.gz`);
     const tar = spawnSync('sh', [
       '-c',
-      'tar cf - -C "$1" "$2" | xz -c > "$3"',
+      'tar czf "$3" -C "$1" "$2"',
       'sh',
       join(dist, 'build'),
       name,
@@ -236,7 +261,7 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
     ).stdout;
     writeFileSync(
       join(dist, 'v24.99.0', 'SHASUMS256.txt'),
-      `${'0'.repeat(64)}  other.tar.xz\n${sum}  ${name}.tar.xz\n`
+      `${'0'.repeat(64)}  other.tar.gz\n${sum}  ${name}.tar.gz\n`
     );
     writeFileSync(
       join(dist, 'index.json'),
@@ -268,7 +293,6 @@ describe('install.sh', { skip: !curl && 'curl is not installed' }, () => {
       'dirname',
       'basename',
       'tar',
-      'xz',
       'gzip',
       'ldd',
       'perl',
@@ -350,7 +374,7 @@ describe('--upgrade through the installer', { skip: !curl && 'curl is not instal
     });
     assert.equal(upgraded.status, 0, upgraded.stderr);
     assert.equal(upgraded.stdout, `scman: ${version} → 99.0.0\n`);
-    assert.equal((await run(launcher, ['--version'], { env: env({}) })).stdout, 'scman 99.0.0\n');
+    assert.equal((await run(launcher, ['--version'], { env: env({}) })).stdout, '99.0.0\n');
     const again = await run(launcher, ['--upgrade'], {
       env: env({ HOME: h, SLICC_INSTALL_BASE_URL: url }),
     });
@@ -378,6 +402,11 @@ describe('install.ps1', () => {
     assert.match(text, /SHASUMS256\.txt/);
     assert.match(text, /\$env:LOCALAPPDATA/);
     assert.match(text, /SCMAN_INSTALL_DIR/);
+    assert.match(
+      text,
+      /%\* & call set `"SCMAN_STATUS=%%ERRORLEVEL%%`" & chcp %SCMAN_CP% >nul & call exit \/b %%SCMAN_STATUS%%",\n {6}''\n/
+    );
+    assert.match(text, /node-\$nodeVersion-win-\$arch\.zip/);
     assert.doesNotMatch(text, /Invoke-Expression|\biex\b|cmd(\.exe)? \/c|Start-Process/i);
     assert.doesNotMatch(text, /^\s*exit\b/m);
   });
@@ -434,7 +463,7 @@ describe('install.ps1', () => {
         ['-NoProfile', '-File', join(bin, 'scman.ps1'), '--version'],
         { env: env({}) }
       );
-      assert.equal(launched.stdout.trim(), `scman ${version}`);
+      assert.equal(launched.stdout.trim(), version);
       const help = await run(pwsh, ['-NoProfile', '-File', installPs1, '-Help'], { env: env({}) });
       assert.equal(help.status, 0);
       assert.match(help.stdout, /^usage: install\.ps1 \[-Version VERSION\] \[-Dir DIR\] \[-Help\]/);

@@ -15,6 +15,17 @@ if (!existsSync(tarball)) {
   console.error(`scripts/assets.mjs: no ${packed}`);
   process.exit(1);
 }
-const sum = createHash('sha256').update(readFileSync(tarball)).digest('hex');
-writeFileSync(join(resolve(dir), 'SHA256SUMS'), `${sum}  ${name}\n`);
-console.log(`${sum}  ${name}`);
+const root = resolve(import.meta.dirname, '..');
+const files = [
+  [name, tarball],
+  ['install.sh', join(root, 'install.sh')],
+  ['install.ps1', join(root, 'install.ps1')],
+];
+const sums = files
+  .map(
+    ([label, path]) =>
+      `${createHash('sha256').update(readFileSync(path)).digest('hex')}  ${label}\n`
+  )
+  .join('');
+writeFileSync(join(resolve(dir), 'SHA256SUMS'), sums);
+process.stdout.write(sums);

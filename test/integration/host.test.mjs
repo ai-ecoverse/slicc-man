@@ -756,7 +756,7 @@ describe('options', () => {
     }
     for (const flag of ['-V', '--version']) {
       const result = await scman(['tree', flag]);
-      assert.deepEqual([result.code, result.stdout, result.stderr], [0, `scman ${version}\n`, '']);
+      assert.deepEqual([result.code, result.stdout, result.stderr], [0, `${version}\n`, '']);
     }
     const none = await scman([]);
     assert.deepEqual(
