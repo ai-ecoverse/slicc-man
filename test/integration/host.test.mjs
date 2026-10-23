@@ -101,6 +101,11 @@ before(async () => {
       response.end('not found');
       return;
     }
+    if (page.status) {
+      response.writeHead(page.status);
+      response.end('failed');
+      return;
+    }
     if (request.headers['if-modified-since'] === page.modified) {
       response.writeHead(304, headers());
       response.end();
@@ -667,6 +672,31 @@ describe('-k and -f', () => {
     cache = mkdtempSync(join(scratch, 'cache-'));
     const nothing = await scman(['-f', 'tree']);
     assert.equal(nothing.code, 2);
+  });
+
+  it('keeps a failure to its own page, with more topics than are fetched at once', async () => {
+    const names = Array.from({ length: 20 }, (_, n) => `p${n}`);
+    state.sitemap = names.map((name) => `/man/${name}`);
+    for (const name of names) state.pages[name] = { body: `Page ${name}.\n`, modified: MODIFIED };
+    state.pages.p0.status = 503;
+    const result = await scman(['-k', '^p']);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(
+      result.stdout,
+      `${names.map((name) => `${`${name} (1)`.padEnd(20)} -${name === 'p0' ? '' : ` Page ${name}.`}`).join('\n')}\n`
+    );
+    assert.deepEqual(
+      requests()
+        .filter((path) => path.startsWith('/man/'))
+        .sort(),
+      names.map((name) => `/man/${name}.md`).sort()
+    );
+    assert.ok(!existsSync(join(site(), 'index.json')));
+    delete state.pages.p0.status;
+    state.log = [];
+    const again = await scman(['-f', 'p0']);
+    assert.equal(again.stdout, `${'p0 (1)'.padEnd(20)} - Page p0.\n`);
+    assert.deepEqual(requests(), ['/man/p0.md']);
   });
 
   it('lists a page without a first paragraph without a description', async () => {
