@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+  issues: write
+  pull-requests: write
+  statuses: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  ci:
+    uses: ai-ecoverse/slicc-shared-web/.github/workflows/pipeline.yml@v2.11.3
+    secrets: inherit
+    with:
+      test-glob: test/integration/*.test.mjs
+      shards: 1
+      review-prompt: |
+        SLICC-MAN
+
+        This repository is slicc-man (`@ai-ecoverse/slicc-man`): `man`, `apropos` and `whatis` for SLICC, and `scman` for SLICC, macOS, Linux and Windows. Pages are the Markdown at `https://www.sliccy.com/man/<topic>.md`, topics come from `https://www.sliccy.com/sitemap.xml`, and the package renders them itself, with no host man, groff or mandoc, through an offline cache. The README is the contract: read the sections the change touches first. `git diff origin/main...HEAD`, or `$RUNNER_TEMP/review/context/pr.diff`, is the change.
+
+        Look for real defects, in this order:
+        1. Correctness: the options, messages and exit codes are the README's (man-db's where it says so), output is plain without a TTY, the cache is fresh, revalidated and used offline as the README says, and on a host only `scman` is installed, never shadowing the host's `man`.
+        2. Security: a topic never escapes the page URL or the cache directory, a pager or fallback command runs only as the README says, and nothing from a page reaches the terminal as a control sequence.
+        3. Tests: every behaviour change has an integration test in `test/integration/` against a local server and fake tools on `PATH`, never the real site, and a fix's test fails without the fix.
+        4. Repo rules: no comments anywhere (YAML too), no unit tests in git, no `.md` besides README.md and AGENTS.md, and a conventional-commit title (`fix`, `feat` and `perf` release, the rest don't).
