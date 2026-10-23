@@ -75,6 +75,17 @@ before(async () => {
     tool('printf "Usage: hello \\033[1m[NAME]\\033[0m\\n"\necho "on stderr" >&2\nexit 3'),
     { mode: 0o755 }
   );
+  await kernel.writeFile(
+    '/opt/fake/links',
+    tool(
+      [
+        'printf "\\033]0;the title\\007Usage: links\\n"',
+        'printf "See \\033]8;;https://example.com\\007the site\\033]8;;\\007.\\n"',
+        'printf "\\033]8;;https://example.org\\033\\\\\\\\more\\033]8;;\\033\\\\\\\\ \\033P1;2q\\033\\\\\\\\end\\n"',
+      ].join('\n')
+    ),
+    { mode: 0o755 }
+  );
   await kernel.writeFile('/tmp/page.md', 'A local page.\n\n## Usage\n\nRead **it**.\n');
 });
 
@@ -222,6 +233,15 @@ describe('in SLICC', () => {
     const several = await run(['man', 'hello', 'nope']);
     assert.equal(several.status, 16);
     assert.equal(several.stdout, 'Usage: hello [NAME]\non stderr\n');
+  });
+
+  it('drops whole OSC and DCS sequences from the --help output, OSC 8 links and titles included', async () => {
+    const result = await run(['man', 'links']);
+    assert.deepEqual(result, {
+      status: 0,
+      stdout: 'Usage: links\nSee the site.\nmore end\n',
+      stderr: 'No manual entry for links; showing links --help\n',
+    });
   });
 
   it('pages through less -R on a terminal, styled, unless NO_COLOR, -P or MANPAGER say otherwise', async () => {
