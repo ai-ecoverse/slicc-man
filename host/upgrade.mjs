@@ -12,16 +12,17 @@ export function version() {
 }
 
 function reason(error) {
-  return error.cause?.message || error.cause?.code || error.message;
+  return error.cause?.message ?? error.message;
 }
 
 function installer(platform, env, path, dir) {
   if (platform === 'win32') {
-    const tool = lookup('powershell.exe', platform, env) ?? lookup('pwsh.exe', platform, env);
+    const file = ['powershell.exe', 'pwsh.exe'].find((name) => lookup(name, platform, env));
     const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path];
-    return tool && { tool, args: [...args, '-Dir', dir] };
+    return file && { file, tool: lookup(file, platform, env), args: [...args, '-Dir', dir] };
   }
-  return { tool: '/bin/sh', args: [path, '--dir', dir] };
+  const tool = lookup('sh', platform, env);
+  return tool && { file: 'sh', tool, args: [path, '--dir', dir] };
 }
 
 function wait(file, args, options) {
@@ -48,7 +49,7 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
   const url = `${(env.SLICC_INSTALL_BASE_URL || LATEST).replace(/\/+$/, '')}/${file}`;
   let text;
   try {
-    const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60000) });
+    const response = await fetch(url, { redirect: 'follow' });
     if (!response.ok) {
       await response.body?.cancel();
       return fail(`could not download ${url}: HTTP ${response.status}`);
@@ -62,7 +63,10 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
     const path = join(scratch, file);
     writeFileSync(path, text);
     const run = installer(platform, env, path, dir);
-    if (!run) return fail(`no PowerShell found to run ${file} (tried powershell.exe, pwsh.exe)`);
+    if (!run) {
+      const tried = platform === 'win32' ? 'powershell.exe, pwsh.exe' : 'sh';
+      return fail(`no shell found to run ${file} (tried ${tried})`);
+    }
     const child = { ...env };
     delete child.SCMAN_INSTALL_DIR;
     const result = await wait(run.tool, run.args, {
@@ -70,7 +74,7 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
       stdio: ['ignore', 'pipe', fds[2]],
       windowsHide: true,
     });
-    if (result.error) return fail(`${file}: ${result.error.message}`);
+    if (result.error) return fail(`${run.file}: ${result.error.message}`);
     if (result.code !== 0) return 1;
     const installed = /^scman (\S+) installed to /m.exec(result.stdout)?.[1];
     if (!installed) return fail(`${file} did not say which version it installed`);
