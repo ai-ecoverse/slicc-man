@@ -95,6 +95,9 @@ export async function page(ctx, name, command, text) {
   }
 }
 
+const escapes =
+  /(?:\u001b[\]P^_X]|[\u0090\u0098\u009d-\u009f])[\s\S]*?(?:\u0007|\u001b\\|\u009c|$)|(?:\u001b\[|\u009b)[0-?]*[ -/]*[@-~]|\u001b[ -/]*[0-~]?/g;
+
 export function help(ctx, topic) {
   const result = ctx.sync.run({
     argv: [topic, '--help'],
@@ -102,7 +105,7 @@ export function help(ctx, topic) {
     stderr: 'stdout',
   });
   const text = decoder.decode(result.stdout ?? new Uint8Array());
-  return clean(text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '').replace(/\u001b[@-_]/g, ''));
+  return clean(text.replace(escapes, ''));
 }
 
 async function columns(ctx, tty) {
