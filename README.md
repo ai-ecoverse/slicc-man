@@ -30,7 +30,7 @@ The same installers are attached to every GitHub release, as `install.sh` and `i
 curl -fsSL https://github.com/ai-ecoverse/slicc-man/releases/latest/download/install.sh | sh
 ```
 
-They install the release's `scman` with a launcher in `~/.local/bin` (on Windows `%LOCALAPPDATA%\slicc-man\bin`, added to the user's `PATH`), and download Node 24 into the install when no Node 24 or later is on `PATH`. Options pass through (`curl -fsSL https://get.sliccy.ai/man | sh -s -- --help`): `--version <version>` installs that release instead of the latest, `--dir <dir>` puts the launcher in `<dir>`, and `--help` prints the usage. `install.ps1` takes them as `-Version`, `-Dir` and `-Help`.
+They install the release's `scman` with a launcher in `~/.local/bin` (on Windows `%LOCALAPPDATA%\slicc-man\bin`, added to the user's `PATH`), and download Node 24 into the install when no Node 24 or later is on `PATH`. Options pass through (`curl -fsSL https://get.sliccy.ai/man | sh -s -- --help`): `--version <version>` installs that release instead of the latest, `--dir <dir>` puts the launcher in `<dir>`, and `--help` prints the usage. `install.ps1` takes the same options.
 
 On a machine with Node 24 or later, npm works too:
 
@@ -62,8 +62,8 @@ man [options] [section] topic...
 | `-I`, `--match-case` | look the topic up as typed, not in lower case |
 | `--nh`, `--no-hyphenation`, `--nj`, `--no-justification` | accepted; the renderer neither hyphenates nor justifies |
 | `-h`, `--help` | the usage to stdout, exit 0 |
-| `-V`, `--version` | `man <version>` (or `scman <version>`) to stdout, exit 0 |
-| `--upgrade` | see [Upgrade](#upgrade) |
+| `-V`, `--version` | `man <version>` (or `scman <version>`) to stdout, exit 0; every host command takes it, and the installer runs the launcher with it |
+| `--upgrade` | see [`--upgrade`](#--upgrade) |
 
 An option's value may be attached (`-s1`, `-Pcat`) or the next argument, and `--` ends the options. `man` with no topic prints `What manual page do you want?` and `For example, try 'man man'.` to stderr and exits 2.
 
@@ -103,6 +103,7 @@ Any other option, or an option without its value, prints `<cmd>: unknown option:
 | code | means |
 | --- | --- |
 | 0 | done |
+| 1 | `--upgrade` on a host, when the installer fails |
 | 2 | a usage error (`man` with no topic included), an option that isn't supported, or an operational error: the site unreachable with nothing cached, a pager that can't be run, a file `-l` can't read |
 | 16 | at least one topic has no page, or one keyword matched nothing |
 
@@ -141,9 +142,11 @@ Each site has its own directory in the cache, named by the base URL's host and p
 
 In SLICC only: when a topic has no page and is a command on `PATH`, `man` prints `No manual entry for <topic>; showing <topic> --help` to stderr, then the output of `<topic> --help` (stdout and stderr together, as plain text, through the pager when stdout is a terminal), and that topic counts as found, so `man` can exit 0. seven's own commands often have no page yet. The fallback doesn't apply to a section other than 1, `-w`, `-k`, `-f` or `-l`. On a host there is no fallback; the host has its own `man`.
 
-## Upgrade
+## `--upgrade`
 
-On a host, `--upgrade` reinstalls the latest release through the same installer, into the same directory (`install.sh` or `install.ps1` with the same `--dir`, or `npm install -g` for an npm install), prints `<old> → <new>`, or `already up to date` when the latest is installed, and exits 0. In SLICC, `--upgrade` prints the command to run, `pnpm add -g @ai-ecoverse/slicc-man@latest`, and exits 0. An upgrade that fails prints why to stderr and exits 2.
+Every host command takes `--upgrade`. It runs the latest release's installer (`install.sh`, or `install.ps1` on Windows) with `--dir` set to the directory the command is installed in, so the new version replaces the old one in place, then prints `<cmd>: <old> → <new>` (for example `scman: 1.2.0 → 1.3.0`), or `<cmd>: already up to date (<version>)`, to stdout and exits 0. If the installer fails, its stderr is passed through and the command exits 1. A command installed with npm prints `npm install -g @ai-ecoverse/slicc-man@latest` to run instead, and exits 0. In SLICC, `--upgrade` prints `pnpm add -g @ai-ecoverse/slicc-man@latest` to run, and exits 0; it installs nothing itself. `--upgrade` takes no other arguments.
+
+The commands are `scman` on a host and `man`, `apropos`, `whatis` and `scman` in SLICC.
 
 ## Platforms
 
