@@ -6,7 +6,12 @@ export function shell(command, platform, env) {
   if (platform === 'win32') {
     return {
       file: variable(env, 'COMSPEC') || 'cmd.exe',
-      args: ['/d', '/s', '/c', `"${command}"`],
+      args: [
+        '/d',
+        '/s',
+        '/c',
+        `"${command} & if errorlevel 9009 if not errorlevel 9010 exit 9009"`,
+      ],
       options: { windowsVerbatimArguments: true },
     };
   }

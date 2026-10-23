@@ -189,8 +189,12 @@ async function scman(argv, options = {}) {
     LOCALAPPDATA: cache,
     SLICC_MAN_URL: url,
     FAKE_LOG: dir,
-    ...options.env,
   };
+  for (const key of Object.keys(options.env ?? {})) {
+    for (const old of Object.keys(env))
+      if (old.toUpperCase() === key.toUpperCase()) delete env[old];
+  }
+  Object.assign(env, options.env);
   for (const [key, value] of Object.entries(env)) if (value === undefined) delete env[key];
   let code;
   try {
@@ -489,7 +493,10 @@ describe('on a terminal', () => {
     assert.deepEqual([paged.code, paged.stdout], [0, 'paged by comspec\n']);
     const argv = paged.read('comspec.argv').split('\n');
     assert.deepEqual(argv.slice(0, 4), ['comspec', '/d', '/s', '/c']);
-    assert.equal(argv[4].replace(/^"(.*)"$/, '$1'), 'less -R');
+    assert.equal(
+      argv[4].replace(/^"(.*)"$/, '$1'),
+      'less -R & if errorlevel 9009 if not errorlevel 9010 exit 9009'
+    );
     assert.equal(paged.read('comspec.stdin'), fixtures['tree.txt']);
     for (const [status, code] of [...(onWindows ? [['9009', 2]] : []), ['127', 0], ['1', 0]]) {
       const result = await scman(['tree'], {
