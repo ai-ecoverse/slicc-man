@@ -23,7 +23,7 @@
   },
   "files": [],
   "scripts": {
-    "prepare": "lefthook install",
+    "prepare": "slicc-install-hooks",
     "lint": "slicc-lint",
     "format": "biome check --write .",
     "test": "node --test --test-timeout=120000 test/integration/*.test.mjs",
