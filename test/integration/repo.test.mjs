@@ -85,21 +85,11 @@ describe('the repository', () => {
   it('installs only scman on a host, and man, apropos, whatis and scman in SLICC', () => {
     assert.deepEqual(pkg.bin, { scman: 'host/scman.mjs' });
     assert.match(read('host/scman.mjs'), /^#!\/usr\/bin\/env node\n/);
-    if (pkg.slicc?.commands !== undefined) {
-      assert.deepEqual(Object.keys(pkg.slicc.commands).sort(), [
-        'apropos',
-        'man',
-        'scman',
-        'whatis',
-      ]);
-    }
+    assert.deepEqual(Object.keys(pkg.slicc.commands).sort(), ['apropos', 'man', 'scman', 'whatis']);
   });
 
   it('packs the license, the README, package.json and every command, and no tests', () => {
-    const pack = spawnSync('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], {
-      cwd: root,
-      encoding: 'utf8',
-    });
+    const pack = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
     assert.equal(pack.status, 0, pack.stderr);
     const files = JSON.parse(pack.stdout)[0]
       .files.map((file) => file.path)
@@ -121,6 +111,21 @@ describe('the repository', () => {
       for (const key of ['script', 'module', 'glue', 'wasm']) {
         if (command[key] !== undefined) assert.ok(files.includes(command[key]), command[key]);
       }
+    }
+  });
+
+  it('builds dist/slicc.mjs at pack time from the current sources, and keeps it out of git', async () => {
+    assert.equal(pkg.scripts.prepack, 'node scripts/bundle.mjs');
+    assert.ok(read('.gitignore').split('\n').includes('dist/'));
+    assert.ok(!tracked.some((path) => path.startsWith('dist/')));
+    const pack = spawnSync('npm', ['pack', '--dry-run', '--json'], { cwd: root, encoding: 'utf8' });
+    assert.equal(pack.status, 0, pack.stderr);
+    assert.ok(JSON.parse(pack.stdout)[0].files.some((file) => file.path === 'dist/slicc.mjs'));
+    const { bundle } = await import('../../scripts/bundle.mjs');
+    assert.equal(read('dist/slicc.mjs'), await bundle());
+    assert.match(pkg.engines['slicc-kernel'], /^>=\d+\.\d+\.\d+$/);
+    for (const [name, command] of Object.entries(pkg.slicc.commands)) {
+      assert.deepEqual(command, { abi: 'js', module: 'dist/slicc.mjs', argv0: name });
     }
   });
 

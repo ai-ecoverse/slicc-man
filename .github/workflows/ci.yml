@@ -21,15 +21,16 @@ concurrency:
 
 jobs:
   ci:
-    uses: ai-ecoverse/slicc-shared-web/.github/workflows/pipeline.yml@v2.11.3
+    uses: ai-ecoverse/slicc-shared-web/.github/workflows/pipeline.yml@v2.12.0
     secrets: inherit
     with:
+      node-version: '26'
       test-glob: test/integration/*.test.mjs
       shards: 1
       review-prompt: |
         SLICC-MAN
 
-        This repository is slicc-man (`@ai-ecoverse/slicc-man`): `man`, `apropos` and `whatis` for SLICC, and `scman` for SLICC, macOS, Linux and Windows. Pages are the Markdown at `https://www.sliccy.com/man/<topic>.md`, topics come from `https://www.sliccy.com/sitemap.xml`, and the package renders them itself, with no host man, groff or mandoc, through an offline cache. The README is the contract: read the sections the change touches first. `git diff origin/main...HEAD`, or `$RUNNER_TEMP/review/context/pr.diff`, is the change.
+        This repository is slicc-man (`@ai-ecoverse/slicc-man`): `man`, `apropos` and `whatis` for SLICC, and `scman` for SLICC, macOS, Linux and Windows. Pages are the Markdown at `https://www.sliccy.com/man/<topic>.md`, topics come from `https://www.sliccy.com/sitemap.xml`, and the package renders them itself, with no host man, groff or mandoc, through an offline cache. In SLICC the commands are one JS-ABI module, `slicc/main.mjs` and `lib/` bundled by `scripts/bundle.mjs` into the gitignored `dist/slicc.mjs` at pack time, tested in a headless slicc-kernel. The README is the contract: read the sections the change touches first. `git diff origin/main...HEAD`, or `$RUNNER_TEMP/review/context/pr.diff`, is the change.
 
         Look for real defects, in this order:
         1. Correctness: the options, messages and exit codes are the README's (man-db's where it says so), output is plain without a TTY, the cache is fresh, revalidated and used offline as the README says, and on a host only `scman` is installed, never shadowing the host's `man`.

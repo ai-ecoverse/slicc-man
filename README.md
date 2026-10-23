@@ -12,6 +12,8 @@ In SLICC, the package declares its commands in `slicc.commands`, so installing i
 pnpm add -g @ai-ecoverse/slicc-man
 ```
 
+They are one self-contained ES module run by the kernel's JS ABI (`"abi": "js"`), so they need no Node in SLICC, and `engines.slicc-kernel` asks for slicc-kernel 1.91.0 or later, the oldest release the integration tests pass on (an older kernel's `fetch` can't reach `host.slicc.internal`, which they use).
+
 On macOS and Linux (get.sliccy.ai, once live):
 
 ```sh
@@ -140,7 +142,7 @@ Each site has its own directory in the cache, named by the base URL's host and p
 
 ## Fallback
 
-In SLICC only: when a topic has no page and is a command on `PATH`, `man` prints `No manual entry for <topic>; showing <topic> --help` to stderr, then the output of `<topic> --help` (stdout and stderr together, as plain text, through the pager when stdout is a terminal), and that topic counts as found, so `man` can exit 0. seven's own commands often have no page yet. The fallback doesn't apply to a section other than 1, `-w`, `-k`, `-f` or `-l`. On a host there is no fallback; the host has its own `man`.
+In SLICC only: when a topic has no page and is a command on `PATH`, `man` prints `No manual entry for <topic>; showing <topic> --help` to stderr, then the output of `<topic> --help` (stdout and stderr together, as plain text with its escape sequences and other control characters dropped, through the pager when stdout is a terminal), and that topic counts as found, so `man` can exit 0. seven's own commands often have no page yet. The fallback doesn't apply to a section other than 1, `-w`, `-k`, `-f` or `-l`. On a host there is no fallback; the host has its own `man`.
 
 ## `--upgrade`
 
@@ -171,12 +173,12 @@ npm run test:unit
 ```
 
 - `npm run lint`: Biome, the no-comment check and the other [slicc-shared-web](https://github.com/ai-ecoverse/slicc-shared-web) checks, then `shellcheck -s sh` and `dash -n` on `install.sh`.
-- `npm test`: the integration tests in `test/integration/`. `host.test.mjs` runs `scman` (in-process, so a terminal can be faked, and as `host/scman.mjs`) against a local HTTP server on an ephemeral port standing in for www.sliccy.com (`SLICC_MAN_URL`), serving copies of the site's `tree.md` and `man.md` (`pages.json`, with their expected renderings), with a temporary cache and fake tools, `less` among them, on a temporary `PATH`; only CI touches the real site. `install.test.mjs` runs `install.sh` on a tarball packed from the tree, with the Node on `PATH` and with a Node download from a fake nodejs.org, and `--upgrade` against a release served from a local server; `install.ps1` is checked statically, and run when `pwsh` is on `PATH`. `repo.test.mjs` checks the workflow, the release config, the package's shape, what `npm pack` ships and the repo rules.
+- `npm test`: the integration tests in `test/integration/`. `slicc.test.mjs` installs the files `npm pack` ships into a headless slicc-kernel in Node (`createNodeKernel`, with wasm-bash and wasm-coreutils), and runs `man`, `apropos`, `whatis` and `scman` there against a local HTTP server on an ephemeral port, reached through the kernel's network transport as `http://host.slicc.internal:<port>` (`SLICC_MAN_URL`), with fake `less` and `hello` commands on `PATH` and a terminal from `openTerminal` for the pager. `host.test.mjs` runs `scman` (in-process, so a terminal can be faked, and as `host/scman.mjs`) against a local HTTP server on an ephemeral port standing in for www.sliccy.com (`SLICC_MAN_URL`), serving copies of the site's `tree.md` and `man.md` (`pages.json`, with their expected renderings), with a temporary cache and fake tools, `less` among them, on a temporary `PATH`; only CI touches the real site. `install.test.mjs` runs `install.sh` on a tarball packed from the tree, with the Node on `PATH` and with a Node download from a fake nodejs.org, and `--upgrade` against a release served from a local server; `install.ps1` is checked statically, and run when `pwsh` is on `PATH`. `repo.test.mjs` checks the workflow, the release config, the package's shape, what `npm pack` ships and the repo rules.
 - `npm run test:unit`: the unit tests in the gitignored `test/unit/`, with Node's coverage in `coverage/unit/lcov.info`. The pre-commit hook wants 100% coverage of the changed lines.
 
-CI is `.github/workflows/ci.yml`, the only workflow, which runs [slicc-shared-web's pipeline](https://github.com/ai-ecoverse/slicc-shared-web#pipeline) at the devDependency's version, on Linux only: `npm run lint`, then `npm test`, then on a pull request the Claude and Codex reviews. The merge queue requires `ci / integration` and `ci / review`. On a push to `main`, semantic-release releases and publishes to npm through trusted publishing, with provenance from `ci.yml`, and attaches `slicc-man-<version>.tgz`, `SHA256SUMS`, `install.sh` and `install.ps1` to the GitHub release (`scripts/assets.mjs` renames the tarball and writes `SHA256SUMS`).
+CI is `.github/workflows/ci.yml`, the only workflow, which runs [slicc-shared-web's pipeline](https://github.com/ai-ecoverse/slicc-shared-web#pipeline) at the devDependency's version, on Linux only, with Node 26, which the headless kernel needs: `npm run lint`, then `npm test`, then on a pull request the Claude and Codex reviews. The merge queue requires `ci / integration` and `ci / review`. On a push to `main`, semantic-release releases and publishes to npm through trusted publishing, with provenance from `ci.yml`, and attaches `slicc-man-<version>.tgz`, `SHA256SUMS`, `install.sh` and `install.ps1` to the GitHub release (`scripts/assets.mjs` renames the tarball and writes `SHA256SUMS`).
 
-The code is in `lib/` (options, the Markdown renderer, the cache and index, apropos and whatis, shared with SLICC) and `host/` (`scman.mjs`, the cache directory, the pager, `--upgrade`).
+The code is in `lib/` (options, the Markdown renderer, the cache and index, apropos and whatis, shared with SLICC), `host/` (`scman.mjs`, the cache directory, the pager, `--upgrade`) and `slicc/` (`main.mjs`, the JS ABI entry: the cache in `~/.cache/slicc-man` through the kernel's file system, `fetch`, the pager, the fallback and `--upgrade`). `scripts/bundle.mjs` bundles `slicc/main.mjs` and `lib/` with esbuild into `dist/slicc.mjs`, the module `slicc.commands` names, with only the version of `package.json` in it. `dist/` is a build output, not in git: `npm pack` and `npm publish` build it (`prepack`), so a release always ships a bundle of its own sources, and `slicc.test.mjs` and `repo.test.mjs` check what `npm pack` ships.
 
 ## License
 

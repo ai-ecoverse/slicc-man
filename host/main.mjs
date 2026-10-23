@@ -1,18 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { run } from '../lib/man.mjs';
+import { reasons } from '../lib/reasons.mjs';
 import { cacheRoot, store } from './cache.mjs';
 import { say } from './io.mjs';
 import { page } from './pager.mjs';
 import { lookup } from './path.mjs';
 import { upgrade, version } from './upgrade.mjs';
-
-const reasons = {
-  ENOENT: 'No such file or directory',
-  EACCES: 'Permission denied',
-  EISDIR: 'Is a directory',
-  ENOTDIR: 'Not a directory',
-};
 
 function read(file, fds) {
   try {
