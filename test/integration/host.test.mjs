@@ -101,6 +101,7 @@ before(async () => {
       response.end('not found');
       return;
     }
+    if (page.hang) return;
     if (page.status) {
       response.writeHead(page.status);
       response.end('failed');
@@ -122,6 +123,7 @@ before(async () => {
 });
 
 after(() => {
+  server.closeAllConnections();
   server.close();
   rmSync(scratch, { recursive: true, force: true });
 });
@@ -173,6 +175,7 @@ async function scman(argv, options = {}) {
       columns: options.columns,
       now: options.now,
       ...(options.fetch ? { fetch: options.fetch } : {}),
+      timeout: options.timeout,
     });
   } finally {
     for (const fd of fds) closeSync(fd);
@@ -697,6 +700,30 @@ describe('-k and -f', () => {
     const again = await scman(['-f', 'p0']);
     assert.equal(again.stdout, `${'p0 (1)'.padEnd(20)} - Page p0.\n`);
     assert.deepEqual(requests(), ['/man/p0.md']);
+  });
+
+  it('stops starting fetches once the network hangs, and reads the rest from the cache', async () => {
+    const names = Array.from({ length: 40 }, (_, n) => `p${n}`);
+    state.sitemap = names.map((name) => `/man/${name}`);
+    for (const name of names) state.pages[name] = { body: `Page ${name}.\n`, modified: MODIFIED };
+    state.cacheControl = 'max-age=0';
+    assert.equal((await scman(['-k', '^p'])).code, 0);
+    for (const name of names) state.pages[name].hang = true;
+    state.log = [];
+    const started = Date.now();
+    const result = await scman(['-k', '^p'], { timeout: 500 });
+    const took = Date.now() - started;
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(
+      result.stdout,
+      `${names.map((name) => `${`${name} (1)`.padEnd(20)} - Page ${name}.`).join('\n')}\n`
+    );
+    assert.equal(result.stderr, '');
+    assert.ok(
+      requests().filter((path) => path.startsWith('/man/')).length <= 8,
+      requests().join(' ')
+    );
+    assert.ok(took < 1500, `took ${took} ms`);
   });
 
   it('lists a page without a first paragraph without a description', async () => {
