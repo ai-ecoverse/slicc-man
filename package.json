@@ -66,6 +66,7 @@
     "lint": "slicc-lint && shellcheck -s sh install.sh && dash -n install.sh",
     "format": "biome check --write .",
     "test": "node --test --test-timeout=120000 test/integration/*.test.mjs",
+    "test:windows": "node --test --test-concurrency=1 --test-timeout=600000 test/integration/host.test.mjs test/integration/windows.test.mjs",
     "test:unit": "node scripts/cover.mjs",
     "build": "npm pack --dry-run",
     "trust": "npx fledgling sync -y --skip-publish",

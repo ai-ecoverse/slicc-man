@@ -8,6 +8,7 @@ import {
   openSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -16,9 +17,19 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
 import { main } from '../../host/main.mjs';
+import { fakeExe } from './fake-windows.mjs';
 
 const root = resolve(import.meta.dirname, '../..');
-const scratch = mkdtempSync(join(tmpdir(), 'slicc-man-host-'));
+const scratch = realpathSync(mkdtempSync(join(tmpdir(), 'slicc-man-host-')));
+const onWindows = process.platform === 'win32';
+const posix = { skip: onWindows && 'needs POSIX fakes' };
+const system = onWindows
+  ? Object.fromEntries(
+      Object.entries(process.env).filter(([key]) =>
+        ['SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'WINDIR'].includes(key.toUpperCase())
+      )
+    )
+  : {};
 const fixtures = JSON.parse(readFileSync(join(import.meta.dirname, 'pages.json'), 'utf8'));
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
 const MODIFIED = 'Tue, 22 Sep 2026 13:04:12 GMT';
@@ -125,7 +136,7 @@ before(async () => {
 after(() => {
   server.closeAllConnections();
   server.close();
-  rmSync(scratch, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true, maxRetries: 20 });
 });
 
 let cache;
@@ -134,17 +145,33 @@ beforeEach(() => {
   cache = mkdtempSync(join(scratch, 'cache-'));
 });
 
-function tools(scripts) {
+function tools(scripts, exe = onWindows) {
   const dir = mkdtempSync(join(scratch, 'bin-'));
   for (const [name, body] of Object.entries(scripts)) {
-    writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`);
+    if (exe) {
+      fakeExe(dir, name.endsWith('.exe') ? name : `${name}.exe`, body);
+      continue;
+    }
+    writeFileSync(join(dir, name), `#!${process.execPath}\n${body}`);
     chmodSync(join(dir, name), 0o755);
   }
   return dir;
 }
 
-const pager = (name) =>
-  `printf '%s\\n' "${name}" "$@" > "$FAKE_LOG/${name}.argv"\ncat > "$FAKE_LOG/${name}.stdin"\nprintf 'paged by ${name}\\n'\nexit "\${FAKE_STATUS:-0}"`;
+const pager = (name) => `const fs = require('node:fs');
+const path = require('node:path');
+const log = (file) => path.join(process.env.FAKE_LOG, ${JSON.stringify(name)} + file);
+fs.writeFileSync(log('.argv'), [${JSON.stringify(name)}, ...process.argv.slice(2)].map((arg) => arg + '\\n').join(''));
+const chunks = [];
+process.stdin.on('data', (chunk) => chunks.push(chunk));
+process.stdin.on('end', () => {
+  fs.writeFileSync(log('.stdin'), Buffer.concat(chunks));
+  process.stdout.write('paged by ${name}\\n');
+  process.exitCode = Number(process.env.FAKE_STATUS || 0);
+});
+`;
+
+const onPath = (bin) => (onWindows ? bin : `${bin}:/usr/bin:/bin`);
 
 async function scman(argv, options = {}) {
   const dir = mkdtempSync(join(scratch, 'run-'));
@@ -155,9 +182,11 @@ async function scman(argv, options = {}) {
     openSync(join(dir, 'err'), 'w'),
   ];
   const env = {
-    PATH: options.path ?? '/usr/bin:/bin',
+    ...system,
+    PATH: options.path ?? (onWindows ? join(scratch, 'none') : '/usr/bin:/bin'),
     HOME: join(scratch, 'home'),
     XDG_CACHE_HOME: cache,
+    LOCALAPPDATA: cache,
     SLICC_MAN_URL: url,
     FAKE_LOG: dir,
     ...options.env,
@@ -186,7 +215,8 @@ async function scman(argv, options = {}) {
 }
 
 const requests = () => state.log.map((entry) => entry.path);
-const site = () => join(cache, 'slicc-man', `127.0.0.1-${new URL(url).port}`);
+const site = () =>
+  join(cache, 'slicc-man', ...(onWindows ? ['cache'] : []), `127.0.0.1-${new URL(url).port}`);
 
 describe('man pages', () => {
   it('renders tree.md as a man page, plain through a pipe', async () => {
@@ -372,7 +402,7 @@ describe('-l', () => {
 describe('on a terminal', () => {
   it('pages through less -R when it is on PATH, with bold and underline', async () => {
     const bin = tools({ less: pager('less') });
-    const result = await scman(['tree'], { tty: true, path: `${bin}:/usr/bin:/bin`, columns: 100 });
+    const result = await scman(['tree'], { tty: true, path: onPath(bin), columns: 100 });
     assert.equal(result.code, 0, result.stderr);
     assert.equal(result.stdout, 'paged by less\n');
     assert.equal(result.read('less.argv'), 'less\n-R\n');
@@ -380,7 +410,7 @@ describe('on a terminal', () => {
     assert.match(paged, /^TREE\(1\) {37}SLICC Manual {37}TREE\(1\)\n\n\x1b\[1mNAME\x1b\[0m\n/);
     assert.match(paged, /\n\x1b\[1mSEE ALSO\x1b\[0m\n/);
     state.pages.styled = { body: 'Is **bold**, *under* and `code`.\n', modified: MODIFIED };
-    const styled = await scman(['styled'], { tty: true, path: `${bin}:/usr/bin:/bin` });
+    const styled = await scman(['styled'], { tty: true, path: onPath(bin) });
     assert.match(
       styled.read('less.stdin'),
       /styled - Is \x1b\[1mbold\x1b\[0m, \x1b\[4munder\x1b\[0m and \x1b\[1mcode\x1b\[0m\.\n$/
@@ -394,7 +424,7 @@ describe('on a terminal', () => {
       two: pager('two'),
       three: pager('three'),
     });
-    const path = `${bin}:/usr/bin:/bin`;
+    const path = onPath(bin);
     const env = { MANPAGER: 'two --flag', PAGER: 'three' };
     const p = await scman(['-P', 'one "a b"', 'tree'], { tty: true, path, env });
     assert.equal(p.read('one.argv'), 'one\na b\n');
@@ -430,7 +460,7 @@ describe('on a terminal', () => {
 
   it('keeps the exit code when the pager fails, and exits 2 when it cannot run', async () => {
     const bin = tools({ less: pager('less') });
-    const path = `${bin}:/usr/bin:/bin`;
+    const path = onPath(bin);
     const failing = await scman(['tree'], { tty: true, path, env: { FAKE_STATUS: '3' } });
     assert.equal(failing.code, 0);
     const missing = await scman(['nope', 'tree'], { tty: true, path, env: { FAKE_STATUS: '3' } });
@@ -442,6 +472,34 @@ describe('on a terminal', () => {
     });
     assert.equal(broken.code, 2);
     assert.match(broken.stderr, /no-such-pager-here/);
+  });
+
+  it('looks less up with PATHEXT on Windows and runs the pager with cmd /d /s /c', async () => {
+    const shell = tools({ comspec: pager('comspec') });
+    const comspec = join(shell, onWindows ? 'comspec.exe' : 'comspec');
+    const bare = mkdtempSync(join(scratch, 'bare-'));
+    writeFileSync(join(bare, 'less'), '');
+    const env = { COMSPEC: comspec, NO_COLOR: '1' };
+    const direct = await scman(['tree'], { platform: 'win32', tty: true, path: bare, env });
+    assert.deepEqual([direct.code, direct.stdout], [0, fixtures['tree.txt']]);
+    assert.equal(direct.read('comspec.argv'), undefined);
+    const found = mkdtempSync(join(scratch, 'found-'));
+    writeFileSync(join(found, 'less.EXE'), '');
+    const paged = await scman(['tree'], { platform: 'win32', tty: true, path: found, env });
+    assert.deepEqual([paged.code, paged.stdout], [0, 'paged by comspec\n']);
+    const argv = paged.read('comspec.argv').split('\n');
+    assert.deepEqual(argv.slice(0, 4), ['comspec', '/d', '/s', '/c']);
+    assert.equal(argv[4].replace(/^"(.*)"$/, '$1'), 'less -R');
+    assert.equal(paged.read('comspec.stdin'), fixtures['tree.txt']);
+    for (const [status, code] of [...(onWindows ? [['9009', 2]] : []), ['127', 0], ['1', 0]]) {
+      const result = await scman(['tree'], {
+        platform: 'win32',
+        tty: true,
+        path: found,
+        env: { ...env, FAKE_STATUS: status },
+      });
+      assert.equal(result.code, code, status);
+    }
   });
 
   it('wraps at MANWIDTH, else the terminal width, else 80', async () => {
@@ -539,7 +597,7 @@ describe('the cache', () => {
     }
   });
 
-  it('names the directory by host and port, and skips a cache it cannot write', async () => {
+  it('names the directory by host and port, and skips a cache it cannot write', posix, async () => {
     await scman(['tree']);
     assert.ok(existsSync(join(site(), 'page-tree.json')));
     const file = join(scratch, 'not-a-directory');
@@ -555,6 +613,29 @@ describe('the cache', () => {
     const relative = await scman(['tree'], { env: { XDG_CACHE_HOME: 'relative', HOME: home } });
     assert.equal(relative.code, 0);
     assert.ok(!existsSync(join(root, 'relative')));
+  });
+
+  it('is in %LOCALAPPDATA%\\slicc-man\\cache on Windows, whatever XDG_CACHE_HOME says', async () => {
+    const local = mkdtempSync(join(scratch, 'local-'));
+    const xdg = mkdtempSync(join(scratch, 'xdg-'));
+    const env = { LOCALAPPDATA: undefined, localappdata: local, XDG_CACHE_HOME: xdg };
+    const result = await scman(['tree'], { platform: 'win32', env });
+    assert.deepEqual([result.code, result.stderr], [0, '']);
+    const port = new URL(url).port;
+    assert.ok(existsSync(join(local, 'slicc-man', 'cache', `127.0.0.1-${port}`, 'page-tree.json')));
+    assert.deepEqual(readdirSync(xdg), []);
+    state.mode = 'down';
+    const offline = await scman(['tree'], { platform: 'win32', env });
+    assert.deepEqual([offline.code, offline.stdout], [0, fixtures['tree.txt']]);
+    state.mode = 'ok';
+    const file = join(scratch, 'local-file');
+    writeFileSync(file, '');
+    const unwritable = await scman(['tree'], {
+      platform: 'win32',
+      env: { LOCALAPPDATA: file, XDG_CACHE_HOME: xdg },
+    });
+    assert.deepEqual([unwritable.code, unwritable.stderr], [0, '']);
+    assert.equal(unwritable.stdout, fixtures['tree.txt']);
   });
 
   it('keeps -I pages apart from lower-case ones', async () => {
@@ -625,7 +706,7 @@ describe('-k and -f', () => {
     const result = await scman(['-k', 'tree'], {
       tty: true,
       columns: 40,
-      path: `${bin}:/usr/bin:/bin`,
+      path: onPath(bin),
     });
     assert.equal(result.stdout, `${index[0].slice(0, 37)}...\n`);
     const wide = await scman(['-k', 'tree'], { tty: true, env: { MANWIDTH: '200' } });
@@ -843,7 +924,7 @@ describe('--upgrade', () => {
     );
   });
 
-  it('runs the latest installer with --dir, and reports the versions', async () => {
+  it('runs the latest installer with --dir, and reports the versions', posix, async () => {
     const bin = mkdtempSync(join(scratch, 'installed-'));
     const record = join(scratch, 'installer-args');
     state.files['/release/install.sh'] = installer(
@@ -887,6 +968,90 @@ describe('--upgrade', () => {
       new RegExp(`^scman: could not download ${url}/release/install\\.sh: .+\\n$`)
     );
   });
+
+  it('runs install.ps1 with -Dir through PowerShell on Windows, without PSModulePath', async () => {
+    const record = join(scratch, 'powershell-call.json');
+    const powershell = `const fs = require('node:fs');
+const argv = process.argv.slice(2);
+const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => ['SCMAN_INSTALL_DIR', 'PSMODULEPATH', 'FAKE_KEPT'].includes(key.toUpperCase())));
+fs.writeFileSync(${JSON.stringify(record)}, JSON.stringify({ argv, env, file: fs.readFileSync(argv[5], 'utf8') }));
+process.stdout.write('scman 99.2.0 installed to x\\n');
+`;
+    const bin = tools({ 'powershell.exe': powershell, 'pwsh.exe': powershell });
+    state.files['/win/install.ps1'] = 'param($Dir)';
+    const dir = 'C:\\Users\\me\\bin';
+    for (const key of ['PSModulePath', 'PSMODULEPATH', 'psmodulepath']) {
+      rmSync(record, { force: true });
+      const result = await scman(['--upgrade'], {
+        platform: 'win32',
+        path: bin,
+        env: {
+          SCMAN_INSTALL_DIR: dir,
+          SLICC_INSTALL_BASE_URL: `${url}/win`,
+          [key]: 'C:\\Program Files\\PowerShell\\7\\Modules',
+          FAKE_KEPT: 'kept',
+        },
+      });
+      assert.deepEqual(
+        [result.code, result.stdout, result.stderr],
+        [0, `scman: ${version} → 99.2.0\n`, ''],
+        key
+      );
+      const call = JSON.parse(readFileSync(record, 'utf8'));
+      assert.deepEqual(call.argv.slice(0, 5), [
+        '-NoProfile',
+        '-NonInteractive',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+      ]);
+      assert.match(call.argv[5], /install\.ps1$/);
+      assert.deepEqual(call.argv.slice(6), ['-Dir', dir]);
+      assert.equal(call.file, 'param($Dir)');
+      assert.deepEqual(call.env, { FAKE_KEPT: 'kept' }, key);
+    }
+    const none = await scman(['--upgrade'], {
+      platform: 'win32',
+      path: mkdtempSync(join(scratch, 'none-')),
+      env: { SCMAN_INSTALL_DIR: dir, SLICC_INSTALL_BASE_URL: `${url}/win` },
+    });
+    assert.deepEqual(
+      [none.code, none.stderr],
+      [1, 'scman: no shell found to run install.ps1 (tried powershell.exe, pwsh.exe)\n']
+    );
+  });
+
+  it('keeps PSModulePath for the installer outside Windows', posix, async () => {
+    const record = join(scratch, 'sh-modules');
+    state.files['/release/install.sh'] = installer(
+      `printf '%s' "\${PSModulePath-unset}" > '${record}'\necho "scman 1.2.3 installed to $2/scman"`
+    );
+    const result = await scman(['--upgrade'], {
+      env: {
+        SCMAN_INSTALL_DIR: scratch,
+        SLICC_INSTALL_BASE_URL: `${url}/release`,
+        PSModulePath: '/opt/modules',
+      },
+    });
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(readFileSync(record, 'utf8'), '/opt/modules');
+  });
+
+  it(
+    'returns once the installer exits, even when something it started holds stdout',
+    posix,
+    async () => {
+      state.files['/release/install.sh'] = installer(
+        'sleep 20 &\necho "scman 1.2.3 installed to $2/scman"'
+      );
+      const started = Date.now();
+      const result = await scman(['--upgrade'], {
+        env: { SCMAN_INSTALL_DIR: scratch, SLICC_INSTALL_BASE_URL: `${url}/release` },
+      });
+      assert.deepEqual([result.code, result.stdout], [0, `scman: ${version} → 1.2.3\n`]);
+      assert.ok(Date.now() - started < 10000, `${Date.now() - started} ms`);
+    }
+  );
 
   it('gives the download 60 seconds, then says it timed out', async () => {
     let signal;
@@ -933,12 +1098,27 @@ function spawned(file, args, env) {
 describe('the scman command', () => {
   it('runs from host/scman.mjs, through a pipe', async () => {
     const home = mkdtempSync(join(scratch, 'home-'));
+    const env = {
+      ...system,
+      PATH: process.env.PATH,
+      HOME: home,
+      LOCALAPPDATA: home,
+      SLICC_MAN_URL: url,
+    };
+    const bin = join(root, 'host/scman.mjs');
+    const scman = (args) => spawned(process.execPath, [bin, ...args], env);
+    assert.deepEqual(await scman(['tree']), [0, fixtures['tree.txt'], '']);
+    assert.deepEqual(await scman(['nope']), [16, '', 'No manual entry for nope\n']);
+    assert.deepEqual(await scman(['-k', 'tree']), [0, `${index[0]}\n`, '']);
+    assert.ok(existsSync(join(home, onWindows ? 'slicc-man/cache' : '.cache/slicc-man')));
+  });
+
+  it('runs as a program, and stops quietly when the pipe closes', posix, async () => {
+    const home = mkdtempSync(join(scratch, 'home-'));
     const env = { PATH: process.env.PATH, HOME: home, SLICC_MAN_URL: url };
     const bin = join(root, 'host/scman.mjs');
     assert.deepEqual(await spawned(bin, ['tree'], env), [0, fixtures['tree.txt'], '']);
-    assert.deepEqual(await spawned(bin, ['nope'], env), [16, '', 'No manual entry for nope\n']);
     const head = await spawned('sh', ['-c', '"$0" -k . | head -1', bin], env);
     assert.deepEqual(head, [0, `${index[0]}\n`, '']);
-    assert.ok(existsSync(join(home, '.cache/slicc-man')));
   });
 });

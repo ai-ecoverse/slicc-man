@@ -32,7 +32,8 @@ export function page(command, text, { name, platform, env, fds }) {
     child.stdin.end(text);
     child.on('close', (code) => {
       process.off('SIGINT', ignore);
-      done(failed || code === 126 || code === 127 ? 2 : 0);
+      const missing = platform === 'win32' ? [9009] : [126, 127];
+      done(failed || missing.includes(code) ? 2 : 0);
     });
   });
 }
