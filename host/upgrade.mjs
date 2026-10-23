@@ -27,11 +27,28 @@ function installer(platform, env, path, dir) {
 
 function wait(file, args, options) {
   return new Promise((done) => {
+    let child;
+    try {
+      child = spawn(file, args, options);
+    } catch (error) {
+      done({ error });
+      return;
+    }
     const out = [];
-    const child = spawn(file, args, options);
+    let code;
+    let timer;
+    const finish = () => {
+      clearTimeout(timer);
+      child.stdout.destroy();
+      done({ code, stdout: Buffer.concat(out).toString() });
+    };
     child.stdout.on('data', (chunk) => out.push(chunk));
     child.on('error', (error) => done({ error }));
-    child.on('close', (code) => done({ code, stdout: Buffer.concat(out).toString() }));
+    child.on('close', finish);
+    child.on('exit', (status) => {
+      code = status ?? 1;
+      timer = setTimeout(finish, 500);
+    });
   });
 }
 
@@ -70,6 +87,11 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
     }
     const child = { ...env };
     delete child.SCMAN_INSTALL_DIR;
+    if (platform === 'win32') {
+      for (const key of Object.keys(child)) {
+        if (key.toUpperCase() === 'PSMODULEPATH') delete child[key];
+      }
+    }
     const result = await wait(run.tool, run.args, {
       env: child,
       stdio: ['ignore', 'pipe', fds[2]],

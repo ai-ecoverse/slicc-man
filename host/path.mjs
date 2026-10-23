@@ -1,5 +1,5 @@
 import { accessSync, constants, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 
 export function variable(env, name) {
   const found = Object.keys(env).find((key) => key.toUpperCase() === name);
@@ -11,14 +11,12 @@ export function lookup(file, platform, env) {
   const dirs = String((windows ? variable(env, 'PATH') : env.PATH) ?? '')
     .split(windows ? ';' : ':')
     .filter(Boolean);
-  const exts = windows
-    ? [
-        '',
-        ...String(variable(env, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD')
+  const exts =
+    windows && !extname(file)
+      ? String(variable(env, 'PATHEXT') || '.COM;.EXE;.BAT;.CMD')
           .split(';')
-          .filter(Boolean),
-      ]
-    : [''];
+          .filter(Boolean)
+      : [''];
   for (const dir of dirs) {
     for (const ext of exts) {
       const path = join(dir, file + ext);

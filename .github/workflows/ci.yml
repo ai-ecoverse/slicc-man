@@ -26,6 +26,7 @@ jobs:
     with:
       node-version: '26'
       test-glob: test/integration/*.test.mjs
+      windows-test: npm run test:windows
       shards: 1
       review-prompt: |
         SLICC-MAN

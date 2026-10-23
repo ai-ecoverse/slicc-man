@@ -6,7 +6,12 @@ export function shell(command, platform, env) {
   if (platform === 'win32') {
     return {
       file: variable(env, 'COMSPEC') || 'cmd.exe',
-      args: ['/d', '/s', '/c', `"${command}"`],
+      args: [
+        '/d',
+        '/s',
+        '/c',
+        `"${command} & if errorlevel 9009 if not errorlevel 9010 exit 9009"`,
+      ],
       options: { windowsVerbatimArguments: true },
     };
   }
@@ -32,7 +37,8 @@ export function page(command, text, { name, platform, env, fds }) {
     child.stdin.end(text);
     child.on('close', (code) => {
       process.off('SIGINT', ignore);
-      done(failed || code === 126 || code === 127 ? 2 : 0);
+      const missing = platform === 'win32' ? [9009] : [126, 127];
+      done(failed || missing.includes(code) ? 2 : 0);
     });
   });
 }

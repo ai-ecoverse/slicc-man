@@ -40,6 +40,11 @@ describe('the repository', () => {
     assert.match(ci, /^\s*review-prompt: \|\n\s+SLICC-MAN$/m);
     const glob = /^\s*test-glob:\s*(\S+)$/m.exec(ci)?.[1];
     assert.ok(glob && pkg.scripts.test.endsWith(` ${glob}`), pkg.scripts.test);
+    assert.match(ci, /^ {6}windows-test: npm run test:windows$/m);
+    assert.match(
+      pkg.scripts['test:windows'],
+      /^node --test .* test\/integration\/windows\.test\.mjs$/
+    );
   });
 
   it('publishes to npm from ci.yml through semantic-release, with provenance', () => {
@@ -62,7 +67,7 @@ describe('the repository', () => {
     );
     assert.deepEqual(
       plugin('@semantic-release/github')[1].assets.map((asset) => asset.path),
-      ['release/slicc-man-*.tgz', 'release/SHA256SUMS', 'install.sh', 'install.ps1']
+      ['release/slicc-man-*.tgz', 'release/SHA256SUMS', 'release/install.sh', 'release/install.ps1']
     );
     assert.ok(read('.gitignore').split('\n').includes('release/'));
     assert.doesNotMatch(JSON.stringify(release), /npmPublish/);
@@ -79,7 +84,10 @@ describe('the repository', () => {
     for (const [name, version] of Object.entries(pkg.devDependencies)) {
       assert.match(version, /^\d+\.\d+\.\d+(-[\w.]+)?$/, `${name} is pinned exactly`);
     }
-    assert.match(pkg.devDependencies['@ai-ecoverse/slicc-shared-web'], /^2\./);
+    const [major, minor] = pkg.devDependencies['@ai-ecoverse/slicc-shared-web']
+      .split('.')
+      .map(Number);
+    assert.ok(major === 2 && minor >= 12, 'windows-test needs slicc-shared-web 2.12.0 or later');
   });
 
   it('installs only scman on a host, and man, apropos, whatis and scman in SLICC', () => {
