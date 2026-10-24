@@ -610,7 +610,10 @@ describe('install.ps1', () => {
       "'if ($null -eq $scmanProxy) { $env:NODE_USE_ENV_PROXY = ''1'' }',",
       "'  if ($null -eq $scmanProxy) { Remove-Item -LiteralPath Env:NODE_USE_ENV_PROXY -ErrorAction SilentlyContinue }',",
       "'try {',",
-      "'  $scmanStatus = $LASTEXITCODE',",
+      "'$global:LASTEXITCODE = $null',",
+      "'  if ($null -ne $LASTEXITCODE) { $scmanStatus = $LASTEXITCODE }',",
+      "'} catch {',",
+      "'  Write-Error -ErrorRecord $_',",
       "'} finally {',",
       "'  if ($null -eq $scmanPrevious) { Remove-Item -LiteralPath Env:SCMAN_INSTALL_DIR -ErrorAction SilentlyContinue } else { $env:SCMAN_INSTALL_DIR = $scmanPrevious }',",
       "'exit $scmanStatus',",
@@ -757,6 +760,42 @@ describe('install.ps1', () => {
         const [all, list] = passed.stdout.split(/(?<=\])(?=\[)/).map((part) => JSON.parse(part));
         assert.deepEqual(all, tricky, `${mode}: ${passed.stderr}`);
         assert.deepEqual(list, ['a', 'b c', 'd'], mode);
+      }
+      const garbage = join(local, 'garbage');
+      writeFileSync(garbage, 'not a program\n', { mode: 0o755 });
+      for (const dead of [join(local, 'gone'), garbage]) {
+        const broken = join(local, 'broken.ps1');
+        writeFileSync(
+          broken,
+          readFileSync(join(bin, 'scman.ps1'), 'utf8').replace(
+            /^ {2}& '(?:[^']|'')+' /m,
+            `  & '${dead}' `
+          )
+        );
+        assert.ok(readFileSync(broken, 'utf8').includes(`& '${dead}' '${entry2}'`));
+        for (const caller of [
+          '',
+          "$PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; ",
+          'trap { continue }; ',
+        ]) {
+          for (const redirect of ['', ' 2>$null']) {
+            const failed = await run(
+              pwsh,
+              [
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                `${caller}& $env:T_NODE -e 0; & '${broken}' --version${redirect}; 'code=' + $LASTEXITCODE; ${show('SCMAN_INSTALL_DIR')}; ${show('NODE_USE_ENV_PROXY')}`,
+              ],
+              { env: env({ T_NODE: process.execPath, NODE_USE_ENV_PROXY: undefined }) }
+            );
+            assert.deepEqual(
+              failed.stdout.trim().split(/\r?\n/),
+              ['code=1', 'SCMAN_INSTALL_DIR=unset', 'NODE_USE_ENV_PROXY=unset'],
+              `${dead} ${caller}${redirect}: ${failed.stderr}`
+            );
+          }
+        }
       }
       const restricted = await run(
         pwsh,
