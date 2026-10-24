@@ -68,7 +68,7 @@ export async function upgrade({ name, env, platform, fds, fetch }) {
   try {
     const response = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60000) });
     if (!response.ok) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       return fail(`could not download ${url}: HTTP ${response.status}`);
     }
     text = await response.text();
